@@ -1,59 +1,56 @@
 package gockito
 
-import "reflect"
-
-type method struct {
-	name       string
-	paramsKind []reflect.Kind
-}
+import (
+	"reflect"
+	"testing"
+)
 
 type Mock struct {
-	methods []method
+	t          *testing.T
+	structName string
+	methods    map[string]Method
 }
 
-func NewMock[T any](str T) Mock {
-	strType := reflect.TypeOf(str)
-
-	switch strType.Kind() {
-	case reflect.Struct:
-		return mockStruct(strType)
+func (m Mock) Expect(name string) Method {
+	method, exists := m.methods[name]
+	if !exists {
+		m.t.Logf("Unexpected call, `%s` does not exists in `%s`", name, m.structName)
+		m.t.FailNow()
 	}
 
-	return Mock{}
+	return method
 }
 
-func mockStruct(strType reflect.Type) Mock {
-	methods := make([]method, 0)
+type RES struct {
+}
+
+func NewMock[T any](t *testing.T) Mock {
+	instance := new(T)
+
+	element := reflect.TypeOf(instance).Elem()
+
+	switch element.Kind() {
+	case reflect.Interface:
+		return generateMock(t, element)
+	default:
+		t.Log("Provided type MUST be an interface")
+		t.FailNow()
+		return Mock{}
+	}
+}
+
+func generateMock(t *testing.T, strType reflect.Type) Mock {
+	methods := make(map[string]Method)
+
 	for i := 0; i < strType.NumMethod(); i++ {
 		m := strType.Method(i)
 
-		value := method{
-			name:       m.Name,
-			paramsKind: getStructParametersKind(m),
-		}
-
-		methods = append(methods, value)
+		methods[m.Name] = newMethod(t, m)
 	}
 
 	return Mock{
-		methods: methods,
+		t:          t,
+		structName: strType.String(),
+		methods:    methods,
 	}
-}
-
-func getStructParametersKind(m reflect.Method) []reflect.Kind {
-	fnType := m.Type
-
-	res := make([]reflect.Kind, 0)
-
-	// numOfParameters is the amount of parameters that the function has.
-	// When its equals to 1 is because there are no parameters.
-	numOfParameters := fnType.NumIn()
-
-	for i := 1; i < numOfParameters; i++ {
-		paramType := fnType.In(i)
-
-		res = append(res, paramType.Kind())
-	}
-
-	return res
 }
